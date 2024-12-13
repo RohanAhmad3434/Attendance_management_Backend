@@ -8,7 +8,7 @@ public class WelcomeController {
     @GetMapping("/welcome")
     public String welcome()
     {
-        return "welcome rohan spring boot";
+        return "welcome rohan ahmad spring";
     }
 
 }

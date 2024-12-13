@@ -163,6 +163,90 @@ public class TeacherController {
 
 
 
+    @GetMapping("/attendanceRecords/{teacherId}")
+    @CrossOrigin(origins = "http://127.0.0.1:5500")
+    public ResponseEntity<?> getAttendanceRecords(@PathVariable Long teacherId) {
+        try {
+            // Step 1: Fetch courses taught by the teacher
+            List<Course> courses = courseRepository.findAllByTeacherId(teacherId);
+
+            if (courses.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No courses found for this teacher.");
+            }
+
+            // Step 2: Extract course IDs
+            List<Long> courseIds = courses.stream().map(Course::getId).toList();
+
+            // Step 3: Fetch attendance records for these courses
+            List<Attendance> attendanceRecords = attendanceRepository.findAllByCourseIdIn(courseIds);
+
+            if (attendanceRecords.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No attendance records found.");
+            }
+
+            // Step 4: Construct the response with necessary details
+            List<Map<String, Object>> response = attendanceRecords.stream().map(record -> {
+                Map<String, Object> data = new HashMap<>();
+                data.put("teacherName", userRepository.findById(teacherId).map(User::getUsername).orElse("Unknown"));
+                data.put("studentName", record.getStudent().getUsername());
+                data.put("courseName", record.getCourse().getName());
+                data.put("date", record.getDate());
+                data.put("status", record.getStatus());
+                return data;
+            }).toList();
+
+            return ResponseEntity.ok(response);
+        } catch (Exception ex) {
+            return ResponseEntity.internalServerError().body("Error fetching attendance records: " + ex.getMessage());
+        }
+    }
+
+
+    @GetMapping("/attendanceGroupedByDate/{teacherId}")
+    @CrossOrigin(origins = "http://127.0.0.1:5500")
+    public ResponseEntity<?> getAttendanceGroupedByDate(@PathVariable Long teacherId) {
+        try {
+            // Fetch all courses taught by the teacher
+            List<Course> courses = courseRepository.findAllByTeacherId(teacherId);
+
+            if (courses.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No courses found for this teacher.");
+            }
+
+            // Extract course IDs
+            List<Long> courseIds = courses.stream().map(Course::getId).toList();
+
+            // Fetch attendance records for these courses
+            List<Attendance> attendanceRecords = attendanceRepository.findAllByCourseIdIn(courseIds);
+
+            if (attendanceRecords.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No attendance records found.");
+            }
+
+            // Fetch teacher's name from UserRepository
+            String teacherName = userRepository.findById(teacherId)
+                    .map(User::getUsername)
+                    .orElse("Unknown");
+
+            // Group attendance records by date
+            Map<LocalDate, List<Map<String, String>>> groupedByDate = attendanceRecords.stream()
+                    .collect(Collectors.groupingBy(
+                            Attendance::getDate,
+                            Collectors.mapping(record -> {
+                                Map<String, String> attendanceDetails = new HashMap<>();
+                                attendanceDetails.put("teacherName", teacherName);
+                                attendanceDetails.put("studentName", record.getStudent().getUsername());
+                                attendanceDetails.put("courseName", record.getCourse().getName());
+                                attendanceDetails.put("status", record.getStatus());
+                                return attendanceDetails;
+                            }, Collectors.toList())
+                    ));
+
+            return ResponseEntity.ok(groupedByDate);
+        } catch (Exception ex) {
+            return ResponseEntity.internalServerError().body("Error fetching grouped attendance: " + ex.getMessage());
+        }
+    }
 
 
 

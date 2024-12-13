@@ -13,10 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 
 @RestController
@@ -124,31 +121,43 @@ public class AdminController {
 
     @PostMapping("/courses")
     @CrossOrigin(origins = "http://127.0.0.1:5500")
-    public ResponseEntity<?> createCourse(@RequestBody Course courseDetails) {
-        // Validate required fields
-        if (courseDetails.getName() == null || courseDetails.getName().isEmpty()) {
+    public ResponseEntity<?> createCourse(@RequestBody Map<String, String> courseDetails) {
+        String courseName = courseDetails.get("name");
+        String teacherName = courseDetails.get("teacherName");
+
+        // Validate course name
+        if (courseName == null || courseName.trim().isEmpty()) {
             return ResponseEntity.badRequest().body("Course name is required.");
         }
 
         // Check if the course name already exists
-        if (courseRepository.findByName(courseDetails.getName()).isPresent()) {
+        if (courseRepository.findByName(courseName).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body("Course name is already taken.");
         }
 
-        // Validate if a teacher is provided and check their existence and role
-        if (courseDetails.getTeacherId() != null) {
-            Optional<User> optionalTeacher = userRepository.findById(courseDetails.getTeacherId());
+        Long teacherId = null;
+        if (teacherName != null && !teacherName.trim().isEmpty()) {
+            // Validate teacher name
+            Optional<User> optionalTeacher = userRepository.findByUsername(teacherName);
             if (!optionalTeacher.isPresent()) {
-                return ResponseEntity.badRequest().body("Invalid teacher ID. Teacher does not exist.");
+                return ResponseEntity.badRequest().body("Teacher with the given name does not exist.");
             }
-            if (optionalTeacher.get().getRole() != User.Role.Teacher) {
+
+            User teacher = optionalTeacher.get();
+            if (teacher.getRole() != User.Role.Teacher) {
                 return ResponseEntity.badRequest().body("The specified user is not a teacher.");
             }
+
+            teacherId = teacher.getId();
         }
 
-        // Save the course with or without a teacher
+        // Create and save the course
+        Course course = new Course();
+        course.setName(courseName);
+        course.setTeacherId(teacherId);
+
         try {
-            Course newCourse = courseRepository.save(courseDetails);
+            Course newCourse = courseRepository.save(course);
             return ResponseEntity.status(HttpStatus.CREATED).body(newCourse);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error creating the course.");
@@ -176,34 +185,48 @@ public class AdminController {
 
     @PutMapping("/courses/{id}")
     @CrossOrigin(origins = "http://127.0.0.1:5500")
-    public ResponseEntity<Course> updateCourse(@PathVariable Long id, @RequestBody Course courseDetails) {
+    public ResponseEntity<?> updateCourse(@PathVariable Long id, @RequestBody Map<String, String> courseDetails) {
+        String courseName = courseDetails.get("name");
+        String teacherName = courseDetails.get("teacherName");
+
         // Check if the course exists
         Optional<Course> optionalCourse = courseRepository.findById(id);
         if (!optionalCourse.isPresent()) {
-            return ResponseEntity.notFound().build(); // 404 Not Found
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Course not found.");
         }
 
         // Fetch the existing course
         Course existingCourse = optionalCourse.get();
 
-        // Update the course name
-        existingCourse.setName(courseDetails.getName());
+        // Update course name
+        if (courseName != null && !courseName.trim().isEmpty()) {
+            existingCourse.setName(courseName);
+        }
 
         // Validate and set the teacher ID
-        if (courseDetails.getTeacherId() != null) {
-            Optional<User> optionalTeacher = userRepository.findById(courseDetails.getTeacherId());
-            if (optionalTeacher.isPresent() && optionalTeacher.get().getRole() == User.Role.Teacher) {
-                existingCourse.setTeacherId(courseDetails.getTeacherId());
-            } else {
-                return ResponseEntity.badRequest().body(null); // 400 Bad Request: Invalid teacher ID
+        if (teacherName != null && !teacherName.trim().isEmpty()) {
+            Optional<User> optionalTeacher = userRepository.findByUsername(teacherName);
+            if (!optionalTeacher.isPresent()) {
+                return ResponseEntity.badRequest().body("Teacher with the given name does not exist.");
             }
+
+            User teacher = optionalTeacher.get();
+            if (teacher.getRole() != User.Role.Teacher) {
+                return ResponseEntity.badRequest().body("The specified user is not a teacher.");
+            }
+
+            existingCourse.setTeacherId(teacher.getId());
         } else {
             existingCourse.setTeacherId(null); // Allow unassigning the teacher
         }
 
         // Save and return the updated course
-        Course updatedCourse = courseRepository.save(existingCourse);
-        return ResponseEntity.ok(updatedCourse); // 200 OK with updated course
+        try {
+            Course updatedCourse = courseRepository.save(existingCourse);
+            return ResponseEntity.ok(updatedCourse);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error updating the course.");
+        }
     }
 
 
@@ -260,12 +283,41 @@ public class AdminController {
     }
 
 
-    @GetMapping("/courses")
+    @GetMapping("/courses_database")
     @CrossOrigin(origins = "http://127.0.0.1:5500")
-    public List<Course> viewCourses() {
+    public List<Course> viewCourseTable() {
         return courseRepository.findAll();
 
     }
+
+
+
+    @GetMapping("/courses")
+    @CrossOrigin(origins = "http://127.0.0.1:5500")
+    public List<Map<String, Object>> viewCourses() {
+        List<Map<String, Object>> coursesWithTeachers = new ArrayList<>();
+
+        List<Course> courses = courseRepository.findAll();
+        for (Course course : courses) {
+            Map<String, Object> courseData = new HashMap<>();
+            courseData.put("id", course.getId());
+            courseData.put("name", course.getName());
+
+            if (course.getTeacherId() != null) {
+                Optional<User> optionalTeacher = userRepository.findById(course.getTeacherId());
+                courseData.put("teacherName", optionalTeacher.map(User::getUsername).orElse("None"));
+            } else {
+                courseData.put("teacherName", "None");
+            }
+
+            coursesWithTeachers.add(courseData);
+        }
+
+        return coursesWithTeachers;
+    }
+
+
+
 
 
     // Assign Teacher to a Course

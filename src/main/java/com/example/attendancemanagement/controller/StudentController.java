@@ -10,7 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/student")
@@ -80,7 +81,56 @@ public class StudentController {
 
         // Return the response
         return ResponseEntity.ok(
-                String.format("Running attendance for student ID :   %d   in course ID :   %d :        %.2f%%", studentId, courseId, runningAttendance)
+                String.format("Running attendance for student: %-20s | Course: %-20s | Attendance: %-6.2f%%",
+                        student.getUsername(), course.getName(), runningAttendance)
+//                String.format("Running attendance for student    :   %s   in course   :   %s :        %.2f%%", student.getUsername(), course.getName(), runningAttendance)
         );
     }
+
+
+    @GetMapping("/attendanceGroupedByDate/{studentId}")
+    @CrossOrigin(origins = "http://127.0.0.1:5500")
+    public ResponseEntity<?> getAttendanceGroupedByDate(@PathVariable Long studentId) {
+        // Validate student existence and role
+        User student = userRepository.findById(studentId).orElse(null);
+        if (student == null || student.getRole() != User.Role.Student) {
+            return ResponseEntity.badRequest().body("Invalid student ID or user is not a student.");
+        }
+
+        // Fetch all attendance records for the student
+        List<Attendance> attendanceRecords = attendanceRepository.findByStudentId(studentId);
+        if (attendanceRecords.isEmpty()) {
+            return ResponseEntity.ok("No attendance records found for this student.");
+        }
+
+        // Sort the attendance records by date in descending order
+        attendanceRecords.sort((a1, a2) -> a1.getDate().compareTo(a2.getDate()));
+
+        // Group attendance records by date and map the data to include teacher name and course name
+        Map<String, List<Map<String, Object>>> groupedByDate = attendanceRecords.stream()
+                .collect(Collectors.groupingBy(
+                        attendance -> attendance.getDate().toString(),
+                        Collectors.mapping(attendance -> {
+                            Map<String, Object> record = new HashMap<>();
+                            record.put("courseName", attendance.getCourse().getName());
+                            record.put("teacherName", getTeacherName(attendance.getCourse().getTeacherId()));
+                           // record.put("date", attendance.getDate().toString());
+                            record.put("status", attendance.getStatus());
+                            return record;
+                        }, Collectors.toList())
+                ));
+
+        // Return the grouped records
+        return ResponseEntity.ok(groupedByDate);
+    }
+
+    // Helper method to get the teacher's name from the teacherId
+    private String getTeacherName(Long teacherId) {
+        User teacher = userRepository.findById(teacherId).orElse(null);
+        if (teacher != null && teacher.getRole() == User.Role.Teacher) {
+            return teacher.getUsername();  // Assuming teacher's name is stored in the 'username' field
+        }
+        return "Unknown Teacher";  // Default if no teacher is found
+    }
+
 }
