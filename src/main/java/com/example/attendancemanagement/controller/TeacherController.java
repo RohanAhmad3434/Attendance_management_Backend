@@ -242,7 +242,11 @@ public class TeacherController {
                             }, Collectors.toList())
                     ));
 
-            return ResponseEntity.ok(groupedByDate);
+            // Sort the grouped records by date in descending order
+            Map<LocalDate, List<Map<String, String>>> sortedGroupedByDate = new TreeMap<>(Collections.reverseOrder());
+            sortedGroupedByDate.putAll(groupedByDate);
+
+            return ResponseEntity.ok(sortedGroupedByDate);
         } catch (Exception ex) {
             return ResponseEntity.internalServerError().body("Error fetching grouped attendance: " + ex.getMessage());
         }

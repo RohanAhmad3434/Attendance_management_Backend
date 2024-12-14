@@ -1,19 +1,24 @@
 package com.example.attendancemanagement.controller;
 
+import com.example.attendancemanagement.entity.Attendance;
 import com.example.attendancemanagement.entity.Course;
 import com.example.attendancemanagement.entity.Enrollment;
 import com.example.attendancemanagement.entity.User;
+import com.example.attendancemanagement.repository.AttendanceRepository;
 import com.example.attendancemanagement.repository.CourseRepository;
 import com.example.attendancemanagement.repository.EnrollmentRepository;
 import com.example.attendancemanagement.repository.UserRepository;
 import jakarta.transaction.Transactional;
+import org.antlr.v4.runtime.tree.pattern.ParseTreePattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 
 @RestController
@@ -27,6 +32,10 @@ public class AdminController {
     private CourseRepository courseRepository;
     @Autowired
     private EnrollmentRepository enrollmentRepository;
+
+    @Autowired
+    private AttendanceRepository attendanceRepository;
+
     @PostMapping("/users")
     @CrossOrigin(origins = "http://127.0.0.1:5500")
     public ResponseEntity<?> addUser(@RequestBody User user) {
@@ -386,6 +395,65 @@ public class AdminController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Teacher not found.");
         }
     }
+
+
+
+    @GetMapping("/attendanceGroupedByDate")
+    @CrossOrigin(origins = "http://127.0.0.1:5500")
+    public ResponseEntity<?> getAttendanceGroupedByDate() {
+        try {
+            // Fetch all attendance records
+
+            List<Attendance> attendanceRecords = attendanceRepository.findAll();
+
+            if (attendanceRecords.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No attendance records found.");
+            }
+
+            // Group attendance records by date
+            Map<LocalDate, Map<String, Object>> groupedByDate = attendanceRecords.stream()
+                    .collect(Collectors.groupingBy(
+                            Attendance::getDate,
+                            Collectors.collectingAndThen(Collectors.toList(), recordsByDate -> {
+                                // Further group by course name
+                                Map<String, Object> groupedByCourse = new HashMap<>();
+
+                                Map<String, List<Map<String, String>>> courses = recordsByDate.stream()
+                                        .collect(Collectors.groupingBy(
+                                                record -> record.getCourse().getName(),
+                                                Collectors.mapping(record -> {
+                                                    Map<String, String> attendanceDetails = new HashMap<>();
+                                                    attendanceDetails.put("studentName", record.getStudent().getUsername());
+                                                    Long teacherId = record.getCourse().getTeacherId();
+                                                    String teacherName = teacherId != null ? userRepository.findById(teacherId).map(User::getUsername).orElse("Unknown") : "None";
+                                                    attendanceDetails.put("teacherName", teacherName);
+                                                    attendanceDetails.put("status", record.getStatus());
+                                                    return attendanceDetails;
+                                                }, Collectors.toList())
+                                        ));
+
+                                // Count total present and absent for the date
+                                long totalPresent = recordsByDate.stream()
+                                        .filter(record -> "Present".equalsIgnoreCase(record.getStatus()))
+                                        .count();
+                                long totalAbsent = recordsByDate.stream()
+                                        .filter(record -> "Absent".equalsIgnoreCase(record.getStatus()))
+                                        .count();
+
+                                groupedByCourse.put("courses", courses);
+                                groupedByCourse.put("totalPresent", totalPresent);
+                                groupedByCourse.put("totalAbsent", totalAbsent);
+
+                                return groupedByCourse;
+                            })
+                    ));
+
+            return ResponseEntity.ok(groupedByDate);
+        } catch (Exception ex) {
+            return ResponseEntity.internalServerError().body("Error fetching grouped attendance: " + ex.getMessage());
+        }
+    }
+
 
 
 }

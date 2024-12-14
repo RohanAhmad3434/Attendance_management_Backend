@@ -103,9 +103,6 @@ public class StudentController {
             return ResponseEntity.ok("No attendance records found for this student.");
         }
 
-        // Sort the attendance records by date in descending order
-        attendanceRecords.sort((a1, a2) -> a1.getDate().compareTo(a2.getDate()));
-
         // Group attendance records by date and map the data to include teacher name and course name
         Map<String, List<Map<String, Object>>> groupedByDate = attendanceRecords.stream()
                 .collect(Collectors.groupingBy(
@@ -120,8 +117,12 @@ public class StudentController {
                         }, Collectors.toList())
                 ));
 
+        // Sort the grouped records by date in descending order
+        Map<String, List<Map<String, Object>>> sortedGroupedByDate = new TreeMap<>(Collections.reverseOrder());
+        sortedGroupedByDate.putAll(groupedByDate);
+
         // Return the grouped records
-        return ResponseEntity.ok(groupedByDate);
+        return ResponseEntity.ok(sortedGroupedByDate);
     }
 
     // Helper method to get the teacher's name from the teacherId
